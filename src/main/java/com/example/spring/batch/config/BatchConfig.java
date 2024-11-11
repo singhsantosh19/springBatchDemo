@@ -5,10 +5,10 @@ import com.example.spring.batch.model.User;
 import com.example.spring.batch.service.CustomItemProcessor;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
-import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
-import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
-import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
+import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.*;
 import org.springframework.batch.item.database.JpaItemWriter;
 import org.springframework.batch.item.json.JacksonJsonObjectReader;
@@ -20,21 +20,17 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.orm.jpa.JpaTransactionManager;
 
-
+import java.util.Objects;
 
 @Configuration
-@EnableBatchProcessing
 public class BatchConfig {
-
     @Autowired
-    private JobBuilderFactory jobs;
-
+    private  JobRepository jobRepository;
+    
     @Autowired
-    private StepBuilderFactory steps;
-
-    @Autowired
-    private PersistenceConfig persistenceConfig;
+    JpaTransactionManager jpaTransactionManager;
 
     @Bean(name="jsonItemReader")
     public JsonItemReader<User> jsonItemReader() {
@@ -52,7 +48,7 @@ public class BatchConfig {
     @Bean(name="JpaItemWriter")
     public JpaItemWriter<Employee> employeeJpaItemWriter() {
         JpaItemWriter<Employee> employeeJpaItemWriter = new JpaItemWriter<>();
-        employeeJpaItemWriter.setEntityManagerFactory(persistenceConfig.entityManagerFactory());
+        employeeJpaItemWriter.setEntityManagerFactory(Objects.requireNonNull(jpaTransactionManager.getEntityManagerFactory()));
         return employeeJpaItemWriter;
     }
 
@@ -61,7 +57,7 @@ public class BatchConfig {
                          @Qualifier("itemProcessor") ItemProcessor<User, Employee> processor,
                          @Qualifier("JpaItemWriter") ItemWriter<Employee> writer) {
 
-        return steps.get("step1").<User, Employee> chunk(5)
+        return new StepBuilder("step1", jobRepository).<User, Employee> chunk(5,jpaTransactionManager)
                 .reader(reader)
                 .processor(processor)
                 .writer(writer)
@@ -71,7 +67,7 @@ public class BatchConfig {
 
     @Bean(name = "firstBatchJob")
     public Job job(@Qualifier("step1") Step step1) {
-        return jobs.get("firstBatchJob")
+        return new JobBuilder("firstBatchJob", jobRepository)
                 .preventRestart()
                 .incrementer(new RunIdIncrementer())
                 .flow(step1)
